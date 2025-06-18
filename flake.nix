@@ -27,7 +27,7 @@
             vulkan-tools
             vulkan-headers
             vulkan-validation-layers
-            zig.packages.${system}.master-2025-06-09
+            zig.packages.${system}.master-2025-06-16
           ];
         };
       });
