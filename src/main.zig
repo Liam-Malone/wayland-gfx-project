@@ -41,7 +41,7 @@ pub fn main() !void {
         const focused_surface: *Client.Surface = state.client.surfaces.items[state.client.focused_surface];
 
         while (!focused_surface.flags.acked) {}
-        _ = state.client.dmabuf.get_surface_feedback(state.client.connection.writer(), .{
+        _ = state.client.dmabuf.get_surface_feedback(state.client.sock_writer, .{
             .surface = focused_surface.wl_surface.id,
         }) catch |err| break :exit err;
 
@@ -224,19 +224,19 @@ fn draw_thread(state: *State) void {
     };
 
     const focused_surface = state.client.surfaces.items[state.client.focused_surface];
-    var cb = focused_surface.wl_surface.frame(state.client.connection.writer(), .{}) catch |err| {
+    var cb = focused_surface.wl_surface.frame(state.client.sock_writer, .{}) catch |err| {
         log.err("failed to register callback object for frame with err :: {s}", .{@errorName(err)});
         state.client.should_exit = true;
         return;
     };
 
-    focused_surface.wl_surface.attach(state.client.connection.writer(), .{
+    focused_surface.wl_surface.attach(state.client.sock_writer, .{
         .buffer = ctx.swapchain.buffers[0].id,
         .x = 0,
         .y = 0,
     }) catch return;
 
-    focused_surface.wl_surface.commit(state.client.connection.writer(), .{}) catch return;
+    focused_surface.wl_surface.commit(state.client.sock_writer, .{}) catch return;
 
     state.client.callback_add_listener(&cb, &frame_listener, @ptrCast(&ctx)) catch {
         state.client.should_exit = true;
@@ -264,7 +264,7 @@ fn frame_callback(data: *anyopaque, cb: *protocols.wayland.Callback, time_milli:
 
     const state = ctx.state;
     const focused_surface = ctx.swapchain.surface;
-    const writer = state.client.connection.writer();
+    const writer = state.client.sock_writer;
 
     ctx.frame_ready = true;
     state.client.callback_destroy(cb);
@@ -370,7 +370,7 @@ fn draw(ctx: *DrawContext) !void {
         }, sc.sync.in_flight_fences[sc.idx]);
 
         // Present & prep next image
-        try sc.present(state.client.connection.writer(), focused_surface.wl_surface);
+        try sc.present(state.client.sock_writer, focused_surface.wl_surface);
         sc.idx = try sc.next_image(state.graphics_context.dev);
     }
 }

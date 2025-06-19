@@ -27,7 +27,7 @@ pub const nil: Client = .{
 
     // Base Wayland Connection
     .socket = -1,
-    .connection = undefined,
+    .sock_writer = @constCast(@ptrCast(@alignCast(&{}))),
 
     // Required Wayland Global Objects
     .display = undefined,
@@ -71,6 +71,7 @@ keymap_arena: *Arena, // Temporary until I implement a free list in my Arena imp
 
 // Base wayland connection
 socket: std.posix.fd_t,
+sock_writer: *anyopaque,
 
 // Required interfaces (Global objects)
 display: wl.Display,
@@ -111,16 +112,44 @@ pub var ev_iter: EventIterator = undefined;
 
 pub fn init(arena: *Arena, sys_ev_queue: *SysEvent.Queue) *Client {
     const client_ptr = arena.create(Client);
-    const connection = open_connection: {
+    const connection = {
         const scratch = Thread.scratch_begin(1, .{arena}).?;
         defer scratch.end();
         const xdg_runtime_dir = std.posix.getenv("XDG_RUNTIME_DIR") orelse return @constCast(&Client.nil);
         const wayland_display = std.posix.getenv("WAYLAND_DISPLAY") orelse return @constCast(&Client.nil);
 
         const sock_path = std.mem.join(scratch.arena.allocator(), "/", &[_][]const u8{ xdg_runtime_dir, wayland_display }) catch return @constCast(&Client.nil);
-        break :open_connection std.net.connectUnixSocket(sock_path) catch return @constCast(&Client.nil);
+
+        const opt_non_block = 0;
+        const sockfd = std.posix.socket(
+            std.posix.AF.UNIX,
+            std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC | opt_non_block,
+            0,
+        ) catch return @constCast(&Client.nil);
+
+        var addr: std.posix.sockaddr = addr: {
+            var sock_addr: std.posix.sockaddr.un = .{
+                .family = std.posix.AF.UNIX,
+                .path = undefined,
+            };
+
+            if (sock_path.len + 1 > sock_addr.path.len) return @constCast(&Client.nil);
+
+            @memset(&sock_addr.path, 0);
+            @memcpy(sock_addr.path[0..sock_path.len], sock_path);
+            break :addr .{ .family = sock_addr.family, .data = sock_addr.path };
+        };
+
+        std.posix.connect(
+            sockfd,
+            &addr,
+            @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.un))),
+        ) catch {
+            log.err("Failed to connect to Wayland Socket", .{});
+            return @constCast(&Client.nil);
+        };
     };
-    const connection_writer = connection.writer();
+    const connection_writer = .{};
 
     const display: wl.Display = .{ .id = 1 };
     interface.registry = interface.Registry.init(arena, display) catch return @constCast(&Client.nil);
@@ -214,7 +243,7 @@ pub fn init(arena: *Arena, sys_ev_queue: *SysEvent.Queue) *Client {
 
         // Base Wayland Connection
         .socket = connection.handle,
-        .connection = connection,
+        .sock_writer = @constCast(@ptrCast(@alignCast(&{}))),
 
         // Global Wayland Objects
         .display = display,
@@ -338,26 +367,26 @@ fn handle_event(client: *Client, ev_builder: *SysEvent) !void {
     const writer = client.connection.writer();
     if (event_iterator.next()) |ev| switch (ev) {
         .wl_buffer => |wl_buffer_ev| switch (wl_buffer_ev) {
-           .release => {
-               log.debug("Compositor has released wl_buffer", .{});
-           },
+            .release => {
+                log.debug("Compositor has released wl_buffer", .{});
+            },
         },
         .wl_callback => |wl_callback_ev| switch (wl_callback_ev) {
-           .done => |cb| {
-               const entry = client.callbacks.items[0];
-               @call(.auto, entry.listener.done, .{ entry.data, entry.callback, @as(i64, @intCast(cb.callback_data)) });
-           },
+            .done => |cb| {
+                const entry = client.callbacks.items[0];
+                @call(.auto, entry.listener.done, .{ entry.data, entry.callback, @as(i64, @intCast(cb.callback_data)) });
+            },
         },
         .wl_display => |wl_display_ev| switch (wl_display_ev) {
-           .delete_id => {},
-           .@"error" => |err| {
-               log.err("wl_display::error => object id: {d}, code: {d}, msg: {s}", .{
-                   err.object_id,
-                   err.code,
-                   err.message,
-               });
-               return error.WlDisplayError;
-           },
+            .delete_id => {},
+            .@"error" => |err| {
+                log.err("wl_display::error => object id: {d}, code: {d}, msg: {s}", .{
+                    err.object_id,
+                    err.code,
+                    err.message,
+                });
+                return error.WlDisplayError;
+            },
         },
         .wl_seat => |wl_seat_ev| switch (wl_seat_ev) {
             .name => |name| {
@@ -754,9 +783,9 @@ pub const EventIterator = struct {
     // NEW APPROACH TO EVENTS:
     // - if no events present (ie, iter.first() returns `null`), caller should invoke iter.load_events()
     // - otherwise, use while (iter.next()) for events
-    
+
     /// Read from socket, to fill up ev_queue and fd_queue
-    /// 
+    ///
     /// This should only be invoked if `iter.first()` returns null;
     pub fn load_events(iter: *EventIterator) !void {
         {
@@ -823,7 +852,8 @@ pub const EventIterator = struct {
                         const union_info = @typeInfo(@TypeOf(obj)).@"union";
                         const event = inline for (union_info.fields) |field| ev: {
                             if (!std.mem.eql(u8, field.name, "nil") and
-                                std.mem.eql(u8, field.name, @tagName(tag))) {
+                                std.mem.eql(u8, field.name, @tagName(tag)))
+                            {
                                 const T = field.type;
 
                                 switch (@typeInfo(T)) {
@@ -832,7 +862,8 @@ pub const EventIterator = struct {
                                         const ev_tag = std.meta.activeTag(ev);
                                         inline for (@typeInfo(T).fields) |ev_field| {
                                             if (std.mem.eql(u8, ev_field.name, @tagName(ev_tag)) and
-                                                @hasField(ev_field.type, "fd")) {
+                                                @hasField(ev_field.type, "fd"))
+                                            {
                                                 @field(ev, "fd") = iter.fd_queue.next();
                                             }
                                         }
