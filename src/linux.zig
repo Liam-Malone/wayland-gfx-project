@@ -515,14 +515,14 @@ const Registry = struct {
     };
 };
 
-const EventIterator = struct {
-    conn: *Connection,
+pub const EventIterator = struct {
+    conn: *const Connection,
     buf: []u8,
     write_idx: u32,
     ev_queue: EvQueue,
     fd_queue: FdQueue,
 
-    pub fn init(arena: *Arena, conn: *Connection, size: u32) EventIterator {
+    pub fn init(arena: *Arena, conn: *const Connection, size: u32) EventIterator {
         return .{
             .conn = conn,
             .buf = arena.push(u8, size),

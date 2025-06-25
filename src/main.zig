@@ -60,36 +60,44 @@ pub fn main() !void {
 
         // read
         {
-            var cmsg_buf: [@sizeOf(linux.cmsghdr) * 10]u8 = undefined;
+            // Manual event read
+            {
+            // var cmsg_buf: [@sizeOf(linux.cmsghdr) * 10]u8 = undefined;
 
-            var iov = [_]std.posix.iovec{
-                .{
-                    .base = &buf,
-                    .len = buf.len,
-                },
-            };
+            // var iov = [_]std.posix.iovec{
+            //     .{
+            //         .base = &buf,
+            //         .len = buf.len,
+            //     },
+            // };
 
-            var message: std.posix.msghdr = .{
-                .name = null,
-                .namelen = 0,
-                .iov = &iov,
-                .iovlen = @intCast(iov.len),
-                .control = &cmsg_buf,
-                .controllen = cmsg_buf.len,
-                .flags = 0,
-            };
+            // var message: std.posix.msghdr = .{
+            //     .name = null,
+            //     .namelen = 0,
+            //     .iov = &iov,
+            //     .iovlen = @intCast(iov.len),
+            //     .control = &cmsg_buf,
+            //     .controllen = cmsg_buf.len,
+            //     .flags = 0,
+            // };
 
-            const rc = std.os.linux.recvmsg(conn.sock,
-                &message,
-                std.os.linux.MSG.WAITALL,
-            );
-            if (rc > buf.len) {
-                const err = std.posix.errno(rc);
-                log.debug("rc :: {d}", .{@as(isize, @bitCast(rc))});
-                log.err("Socket read failed with err :: {s}", .{@tagName(err)});
-                return error.SocketReadFailed;
-            } else {
-                log.debug("Received {d} bytes from socket", .{rc});
+            // const rc = std.os.linux.recvmsg(conn.sock,
+            //     &message,
+            //     std.os.linux.MSG.WAITALL,
+            // );
+            // if (rc > buf.len) {
+            //     const err = std.posix.errno(rc);
+            //     log.debug("rc :: {d}", .{@as(isize, @bitCast(rc))});
+            //     log.err("Socket read failed with err :: {s}", .{@tagName(err)});
+            //     return error.SocketReadFailed;
+            // } else {
+            //     log.debug("Received {d} bytes from socket", .{rc});
+            // }
+            }
+            // Abstracted Event Read
+            {
+                var event_iter: linux.EventIterator = .init(arena, &conn, 2048);
+                try event_iter.load_events();
             }
         }
     }
