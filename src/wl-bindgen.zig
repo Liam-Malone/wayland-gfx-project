@@ -251,9 +251,9 @@ pub fn generate(allocator: Allocator, spec_xml: []const u8, writer: anytype) !vo
                 if (req.getAttribute("type")) |_| { // only appears with destructors
                     try writer.print(
                         \\
-                        \\    pub fn {s}(self: *const {s}, writer: anytype, params: {s}_params,) !void {{
-                        \\        try msg.write(writer, @TypeOf(params), params, self.id);
-                        \\        interface.registry.remove(self.*);
+                        \\    pub fn {s}(self: *const {s}, connection: Connection, params: {s}_params,) !void {{
+                        \\        try connection.write(params, self.id, @TypeOf(params).op);
+                        \\        connection.registry.remove(self.*);
                         \\    }}
                         \\
                         \\
@@ -265,17 +265,17 @@ pub fn generate(allocator: Allocator, spec_xml: []const u8, writer: anytype) !vo
                 } else if (req_interface_opt) |interface_t| {
                     try writer.print(
                         \\
-                        \\    pub fn {s}(self: *const {s}, writer: anytype, params: {s}_params,) !{s} {{
+                        \\    pub fn {s}(self: *const {s}, connection: Connection, params: {s}_params,) !{s} {{
                         \\        const res_id = init: {{
                         \\            if (params.{s}) |id| {{
-                        \\                try msg.write(writer, @TypeOf(params), params, self.id);
-                        \\                try interface.registry.insert(id, {s});
+                        \\                try connection.write(params, self.id, @TypeOf(params).op);
+                        \\                try connection.registry.insert(id, {s});
                         \\                break :init id;
                         \\            }} else {{
-                        \\                const _res = try interface.registry.register({s});
+                        \\                const _res = try connection.registry.register({s});
                         \\                var write_params: {s}_params = params;
                         \\                write_params.{s} = _res.id;
-                        \\                try msg.write(writer, @TypeOf(params), write_params, self.id);
+                        \\                try connection.write(write_params, self.id, @TypeOf(params).op);
                         \\                break :init _res.id;
                         \\            }}
                         \\        }};
@@ -297,8 +297,8 @@ pub fn generate(allocator: Allocator, spec_xml: []const u8, writer: anytype) !vo
                 } else {
                     try writer.print(
                         \\
-                        \\    pub fn {s}(self: *const {s}, writer: anytype, params: {s}_params,) !void {{
-                        \\        try msg.write(writer, @TypeOf(params), params, self.id);
+                        \\    pub fn {s}(self: *const {s}, connection: Connection, params: {s}_params,) !void {{
+                        \\        try connection.write(params, self.id, @TypeOf(params).op);
                         \\    }}
                         \\
                         \\
@@ -371,7 +371,7 @@ pub fn generate(allocator: Allocator, spec_xml: []const u8, writer: anytype) !vo
                     const ev_name = ev.getAttribute("name").?;
 
                     try writer.print(
-                        \\                {d} => .{{ .@"{s}" = try msg.parse_data(Event.@"{s}", data) }},
+                        \\                {d} => .{{ .@"{s}" = try Connection.parse_wire_ev(Event.@"{s}", data) }},
                         \\
                     , .{ idx, ev_name, snakeToPascal(ev_name) });
                 }
@@ -485,8 +485,8 @@ pub fn main() !void {
             \\//
             \\
             \\const std = @import("std");
-            \\const interface = @import("../wl-interface.zig"); // assume provided by user"
-            \\const msg = @import("../wl-msg.zig"); // assume provided by user"
+            \\const linux = @import("../linux.zig"); // assume provided by user"
+            \\const Connection = linux.Connection;
             \\
         , .{});
 

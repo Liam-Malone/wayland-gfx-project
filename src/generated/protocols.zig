@@ -4,8 +4,8 @@
 //
 
 const std = @import("std");
-const interface = @import("../wl-interface.zig"); // assume provided by user"
-const msg = @import("../wl-msg.zig"); // assume provided by user"
+const linux = @import("../linux.zig"); // assume provided by user"
+const Connection = linux.Connection;
 
 // ----------------------- BEGIN PROTOCOL: wayland --------------------------
 
@@ -41,19 +41,19 @@ pub const wayland = struct {
         /// asynchronous roundtrip
         pub fn sync(
             self: *const Display,
-            writer: anytype,
+            connection: Connection,
             params: sync_params,
         ) !wl_callback {
             const res_id = init: {
                 if (params.callback) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_callback);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_callback);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_callback);
+                    const _res = try connection.registry.register(wl_callback);
                     var write_params: sync_params = params;
                     write_params.callback = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -69,19 +69,19 @@ pub const wayland = struct {
         /// get global registry object
         pub fn get_registry(
             self: *const Display,
-            writer: anytype,
+            connection: Connection,
             params: get_registry_params,
         ) !wl_registry {
             const res_id = init: {
                 if (params.registry) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_registry);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_registry);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_registry);
+                    const _res = try connection.registry.register(wl_registry);
                     var write_params: get_registry_params = params;
                     write_params.registry = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -105,8 +105,8 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .@"error" = try msg.parse_data(Event.Error, data) },
-                    1 => .{ .delete_id = try msg.parse_data(Event.DeleteId, data) },
+                    0 => .{ .@"error" = try Connection.parse_wire_ev(Event.Error, data) },
+                    1 => .{ .delete_id = try Connection.parse_wire_ev(Event.DeleteId, data) },
                     else => {
                         log.warn("Unknown display event: {d}", .{op});
                         return error.UnknownEvent;
@@ -138,10 +138,10 @@ pub const wayland = struct {
         /// bind an object to the display
         pub fn bind(
             self: *const Registry,
-            writer: anytype,
+            connection: Connection,
             params: bind_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -161,8 +161,8 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .global = try msg.parse_data(Event.Global, data) },
-                    1 => .{ .global_remove = try msg.parse_data(Event.GlobalRemove, data) },
+                    0 => .{ .global = try Connection.parse_wire_ev(Event.Global, data) },
+                    1 => .{ .global_remove = try Connection.parse_wire_ev(Event.GlobalRemove, data) },
                     else => {
                         log.warn("Unknown registry event: {d}", .{op});
                         return error.UnknownEvent;
@@ -189,7 +189,7 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .done = try msg.parse_data(Event.Done, data) },
+                    0 => .{ .done = try Connection.parse_wire_ev(Event.Done, data) },
                     else => {
                         log.warn("Unknown callback event: {d}", .{op});
                         return error.UnknownEvent;
@@ -217,19 +217,19 @@ pub const wayland = struct {
         /// create new surface
         pub fn create_surface(
             self: *const Compositor,
-            writer: anytype,
+            connection: Connection,
             params: create_surface_params,
         ) !wl_surface {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_surface);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_surface);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_surface);
+                    const _res = try connection.registry.register(wl_surface);
                     var write_params: create_surface_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -245,19 +245,19 @@ pub const wayland = struct {
         /// create new region
         pub fn create_region(
             self: *const Compositor,
-            writer: anytype,
+            connection: Connection,
             params: create_region_params,
         ) !wl_region {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_region);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_region);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_region);
+                    const _res = try connection.registry.register(wl_region);
                     var write_params: create_region_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -293,19 +293,19 @@ pub const wayland = struct {
         /// create a buffer from the pool
         pub fn create_buffer(
             self: *const ShmPool,
-            writer: anytype,
+            connection: Connection,
             params: create_buffer_params,
         ) !wl_buffer {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_buffer);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_buffer);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_buffer);
+                    const _res = try connection.registry.register(wl_buffer);
                     var write_params: create_buffer_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -319,11 +319,11 @@ pub const wayland = struct {
         /// destroy the pool
         pub fn destroy(
             self: *const ShmPool,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const resize_params = struct {
@@ -335,10 +335,10 @@ pub const wayland = struct {
         /// change the size of the pool mapping
         pub fn resize(
             self: *const ShmPool,
-            writer: anytype,
+            connection: Connection,
             params: resize_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
     };
 
@@ -610,19 +610,19 @@ pub const wayland = struct {
         /// create a shm pool
         pub fn create_pool(
             self: *const Shm,
-            writer: anytype,
+            connection: Connection,
             params: create_pool_params,
         ) !wl_shm_pool {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_shm_pool);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_shm_pool);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_shm_pool);
+                    const _res = try connection.registry.register(wl_shm_pool);
                     var write_params: create_pool_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -636,11 +636,11 @@ pub const wayland = struct {
         /// release the shm object
         pub fn release(
             self: *const Shm,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -652,7 +652,7 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .format = try msg.parse_data(Event.Format, data) },
+                    0 => .{ .format = try Connection.parse_wire_ev(Event.Format, data) },
                     else => {
                         log.warn("Unknown shm event: {d}", .{op});
                         return error.UnknownEvent;
@@ -678,11 +678,11 @@ pub const wayland = struct {
         /// destroy a buffer
         pub fn destroy(
             self: *const Buffer,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -692,7 +692,7 @@ pub const wayland = struct {
             pub const Release = struct {};
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .release = try msg.parse_data(Event.Release, data) },
+                    0 => .{ .release = try Connection.parse_wire_ev(Event.Release, data) },
                     else => {
                         log.warn("Unknown buffer event: {d}", .{op});
                         return error.UnknownEvent;
@@ -731,10 +731,10 @@ pub const wayland = struct {
         /// accept one of the offered mime types
         pub fn accept(
             self: *const DataOffer,
-            writer: anytype,
+            connection: Connection,
             params: accept_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const receive_params = struct {
@@ -748,10 +748,10 @@ pub const wayland = struct {
         /// request that the data is transferred
         pub fn receive(
             self: *const DataOffer,
-            writer: anytype,
+            connection: Connection,
             params: receive_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const destroy_params = struct {
@@ -761,11 +761,11 @@ pub const wayland = struct {
         /// destroy data offer
         pub fn destroy(
             self: *const DataOffer,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const finish_params = struct {
@@ -775,10 +775,10 @@ pub const wayland = struct {
         /// the offer will no longer be used
         pub fn finish(
             self: *const DataOffer,
-            writer: anytype,
+            connection: Connection,
             params: finish_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_actions_params = struct {
@@ -792,10 +792,10 @@ pub const wayland = struct {
         /// set the available/preferred drag-and-drop actions
         pub fn set_actions(
             self: *const DataOffer,
-            writer: anytype,
+            connection: Connection,
             params: set_actions_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -819,9 +819,9 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .offer = try msg.parse_data(Event.Offer, data) },
-                    1 => .{ .source_actions = try msg.parse_data(Event.SourceActions, data) },
-                    2 => .{ .action = try msg.parse_data(Event.Action, data) },
+                    0 => .{ .offer = try Connection.parse_wire_ev(Event.Offer, data) },
+                    1 => .{ .source_actions = try Connection.parse_wire_ev(Event.SourceActions, data) },
+                    2 => .{ .action = try Connection.parse_wire_ev(Event.Action, data) },
                     else => {
                         log.warn("Unknown data_offer event: {d}", .{op});
                         return error.UnknownEvent;
@@ -854,10 +854,10 @@ pub const wayland = struct {
         /// add an offered mime type
         pub fn offer(
             self: *const DataSource,
-            writer: anytype,
+            connection: Connection,
             params: offer_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const destroy_params = struct {
@@ -867,11 +867,11 @@ pub const wayland = struct {
         /// destroy the data source
         pub fn destroy(
             self: *const DataSource,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const set_actions_params = struct {
@@ -883,10 +883,10 @@ pub const wayland = struct {
         /// set the available drag-and-drop actions
         pub fn set_actions(
             self: *const DataSource,
-            writer: anytype,
+            connection: Connection,
             params: set_actions_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -923,12 +923,12 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .target = try msg.parse_data(Event.Target, data) },
-                    1 => .{ .send = try msg.parse_data(Event.Send, data) },
-                    2 => .{ .cancelled = try msg.parse_data(Event.Cancelled, data) },
-                    3 => .{ .dnd_drop_performed = try msg.parse_data(Event.DndDropPerformed, data) },
-                    4 => .{ .dnd_finished = try msg.parse_data(Event.DndFinished, data) },
-                    5 => .{ .action = try msg.parse_data(Event.Action, data) },
+                    0 => .{ .target = try Connection.parse_wire_ev(Event.Target, data) },
+                    1 => .{ .send = try Connection.parse_wire_ev(Event.Send, data) },
+                    2 => .{ .cancelled = try Connection.parse_wire_ev(Event.Cancelled, data) },
+                    3 => .{ .dnd_drop_performed = try Connection.parse_wire_ev(Event.DndDropPerformed, data) },
+                    4 => .{ .dnd_finished = try Connection.parse_wire_ev(Event.DndFinished, data) },
+                    5 => .{ .action = try Connection.parse_wire_ev(Event.Action, data) },
                     else => {
                         log.warn("Unknown data_source event: {d}", .{op});
                         return error.UnknownEvent;
@@ -967,10 +967,10 @@ pub const wayland = struct {
         /// start drag-and-drop operation
         pub fn start_drag(
             self: *const DataDevice,
-            writer: anytype,
+            connection: Connection,
             params: start_drag_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_selection_params = struct {
@@ -984,10 +984,10 @@ pub const wayland = struct {
         /// copy data to the selection
         pub fn set_selection(
             self: *const DataDevice,
-            writer: anytype,
+            connection: Connection,
             params: set_selection_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const release_params = struct {
@@ -997,11 +997,11 @@ pub const wayland = struct {
         /// destroy data device
         pub fn release(
             self: *const DataDevice,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -1045,12 +1045,12 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .data_offer = try msg.parse_data(Event.DataOffer, data) },
-                    1 => .{ .enter = try msg.parse_data(Event.Enter, data) },
-                    2 => .{ .leave = try msg.parse_data(Event.Leave, data) },
-                    3 => .{ .motion = try msg.parse_data(Event.Motion, data) },
-                    4 => .{ .drop = try msg.parse_data(Event.Drop, data) },
-                    5 => .{ .selection = try msg.parse_data(Event.Selection, data) },
+                    0 => .{ .data_offer = try Connection.parse_wire_ev(Event.DataOffer, data) },
+                    1 => .{ .enter = try Connection.parse_wire_ev(Event.Enter, data) },
+                    2 => .{ .leave = try Connection.parse_wire_ev(Event.Leave, data) },
+                    3 => .{ .motion = try Connection.parse_wire_ev(Event.Motion, data) },
+                    4 => .{ .drop = try Connection.parse_wire_ev(Event.Drop, data) },
+                    5 => .{ .selection = try Connection.parse_wire_ev(Event.Selection, data) },
                     else => {
                         log.warn("Unknown data_device event: {d}", .{op});
                         return error.UnknownEvent;
@@ -1117,19 +1117,19 @@ pub const wayland = struct {
         /// create a new data source
         pub fn create_data_source(
             self: *const DataDeviceManager,
-            writer: anytype,
+            connection: Connection,
             params: create_data_source_params,
         ) !wl_data_source {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_data_source);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_data_source);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_data_source);
+                    const _res = try connection.registry.register(wl_data_source);
                     var write_params: create_data_source_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1147,19 +1147,19 @@ pub const wayland = struct {
         /// create a new data device
         pub fn get_data_device(
             self: *const DataDeviceManager,
-            writer: anytype,
+            connection: Connection,
             params: get_data_device_params,
         ) !wl_data_device {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_data_device);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_data_device);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_data_device);
+                    const _res = try connection.registry.register(wl_data_device);
                     var write_params: get_data_device_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1190,19 +1190,19 @@ pub const wayland = struct {
         /// create a shell surface from a surface
         pub fn get_shell_surface(
             self: *const Shell,
-            writer: anytype,
+            connection: Connection,
             params: get_shell_surface_params,
         ) !wl_shell_surface {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_shell_surface);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_shell_surface);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_shell_surface);
+                    const _res = try connection.registry.register(wl_shell_surface);
                     var write_params: get_shell_surface_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1319,10 +1319,10 @@ pub const wayland = struct {
         /// respond to a ping event
         pub fn pong(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: pong_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const move_params = struct {
@@ -1336,10 +1336,10 @@ pub const wayland = struct {
         /// start an interactive move
         pub fn move(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: move_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const resize_params = struct {
@@ -1355,10 +1355,10 @@ pub const wayland = struct {
         /// start an interactive resize
         pub fn resize(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: resize_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_toplevel_params = struct {
@@ -1368,10 +1368,10 @@ pub const wayland = struct {
         /// make the surface a toplevel surface
         pub fn set_toplevel(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_toplevel_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_transient_params = struct {
@@ -1389,10 +1389,10 @@ pub const wayland = struct {
         /// make the surface a transient surface
         pub fn set_transient(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_transient_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_fullscreen_params = struct {
@@ -1408,10 +1408,10 @@ pub const wayland = struct {
         /// make the surface a fullscreen surface
         pub fn set_fullscreen(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_fullscreen_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_popup_params = struct {
@@ -1433,10 +1433,10 @@ pub const wayland = struct {
         /// make the surface a popup surface
         pub fn set_popup(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_popup_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_maximized_params = struct {
@@ -1448,10 +1448,10 @@ pub const wayland = struct {
         /// make the surface a maximized surface
         pub fn set_maximized(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_maximized_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_title_params = struct {
@@ -1463,10 +1463,10 @@ pub const wayland = struct {
         /// set surface title
         pub fn set_title(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_title_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_class_params = struct {
@@ -1478,10 +1478,10 @@ pub const wayland = struct {
         /// set surface class
         pub fn set_class(
             self: *const ShellSurface,
-            writer: anytype,
+            connection: Connection,
             params: set_class_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -1505,9 +1505,9 @@ pub const wayland = struct {
             pub const PopupDone = struct {};
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .ping = try msg.parse_data(Event.Ping, data) },
-                    1 => .{ .configure = try msg.parse_data(Event.Configure, data) },
-                    2 => .{ .popup_done = try msg.parse_data(Event.PopupDone, data) },
+                    0 => .{ .ping = try Connection.parse_wire_ev(Event.Ping, data) },
+                    1 => .{ .configure = try Connection.parse_wire_ev(Event.Configure, data) },
+                    2 => .{ .popup_done = try Connection.parse_wire_ev(Event.PopupDone, data) },
                     else => {
                         log.warn("Unknown shell_surface event: {d}", .{op});
                         return error.UnknownEvent;
@@ -1546,11 +1546,11 @@ pub const wayland = struct {
         /// delete surface
         pub fn destroy(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const attach_params = struct {
@@ -1566,10 +1566,10 @@ pub const wayland = struct {
         /// set the surface contents
         pub fn attach(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: attach_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const damage_params = struct {
@@ -1587,10 +1587,10 @@ pub const wayland = struct {
         /// mark part of the surface damaged
         pub fn damage(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: damage_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const frame_params = struct {
@@ -1602,19 +1602,19 @@ pub const wayland = struct {
         /// request a frame throttling hint
         pub fn frame(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: frame_params,
         ) !wl_callback {
             const res_id = init: {
                 if (params.callback) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_callback);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_callback);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_callback);
+                    const _res = try connection.registry.register(wl_callback);
                     var write_params: frame_params = params;
                     write_params.callback = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1630,10 +1630,10 @@ pub const wayland = struct {
         /// set opaque region
         pub fn set_opaque_region(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: set_opaque_region_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_input_region_params = struct {
@@ -1645,10 +1645,10 @@ pub const wayland = struct {
         /// set input region
         pub fn set_input_region(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: set_input_region_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const commit_params = struct {
@@ -1658,10 +1658,10 @@ pub const wayland = struct {
         /// commit pending surface state
         pub fn commit(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: commit_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_buffer_transform_params = struct {
@@ -1673,10 +1673,10 @@ pub const wayland = struct {
         /// sets the buffer transformation
         pub fn set_buffer_transform(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: set_buffer_transform_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_buffer_scale_params = struct {
@@ -1688,10 +1688,10 @@ pub const wayland = struct {
         /// sets the buffer scaling factor
         pub fn set_buffer_scale(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: set_buffer_scale_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const damage_buffer_params = struct {
@@ -1709,10 +1709,10 @@ pub const wayland = struct {
         /// mark part of the surface damaged using buffer coordinates
         pub fn damage_buffer(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: damage_buffer_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const offset_params = struct {
@@ -1726,10 +1726,10 @@ pub const wayland = struct {
         /// set the surface contents offset
         pub fn offset(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: offset_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -1759,10 +1759,10 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .enter = try msg.parse_data(Event.Enter, data) },
-                    1 => .{ .leave = try msg.parse_data(Event.Leave, data) },
-                    2 => .{ .preferred_buffer_scale = try msg.parse_data(Event.PreferredBufferScale, data) },
-                    3 => .{ .preferred_buffer_transform = try msg.parse_data(Event.PreferredBufferTransform, data) },
+                    0 => .{ .enter = try Connection.parse_wire_ev(Event.Enter, data) },
+                    1 => .{ .leave = try Connection.parse_wire_ev(Event.Leave, data) },
+                    2 => .{ .preferred_buffer_scale = try Connection.parse_wire_ev(Event.PreferredBufferScale, data) },
+                    3 => .{ .preferred_buffer_transform = try Connection.parse_wire_ev(Event.PreferredBufferTransform, data) },
                     else => {
                         log.warn("Unknown surface event: {d}", .{op});
                         return error.UnknownEvent;
@@ -1833,19 +1833,19 @@ pub const wayland = struct {
         /// return pointer object
         pub fn get_pointer(
             self: *const Seat,
-            writer: anytype,
+            connection: Connection,
             params: get_pointer_params,
         ) !wl_pointer {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_pointer);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_pointer);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_pointer);
+                    const _res = try connection.registry.register(wl_pointer);
                     var write_params: get_pointer_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1861,19 +1861,19 @@ pub const wayland = struct {
         /// return keyboard object
         pub fn get_keyboard(
             self: *const Seat,
-            writer: anytype,
+            connection: Connection,
             params: get_keyboard_params,
         ) !wl_keyboard {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_keyboard);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_keyboard);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_keyboard);
+                    const _res = try connection.registry.register(wl_keyboard);
                     var write_params: get_keyboard_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1889,19 +1889,19 @@ pub const wayland = struct {
         /// return touch object
         pub fn get_touch(
             self: *const Seat,
-            writer: anytype,
+            connection: Connection,
             params: get_touch_params,
         ) !wl_touch {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_touch);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_touch);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_touch);
+                    const _res = try connection.registry.register(wl_touch);
                     var write_params: get_touch_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -1915,11 +1915,11 @@ pub const wayland = struct {
         /// release the seat object
         pub fn release(
             self: *const Seat,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -1937,8 +1937,8 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .capabilities = try msg.parse_data(Event.Capabilities, data) },
-                    1 => .{ .name = try msg.parse_data(Event.Name, data) },
+                    0 => .{ .capabilities = try Connection.parse_wire_ev(Event.Capabilities, data) },
+                    1 => .{ .name = try Connection.parse_wire_ev(Event.Name, data) },
                     else => {
                         log.warn("Unknown seat event: {d}", .{op});
                         return error.UnknownEvent;
@@ -2007,10 +2007,10 @@ pub const wayland = struct {
         /// set the pointer surface
         pub fn set_cursor(
             self: *const Pointer,
-            writer: anytype,
+            connection: Connection,
             params: set_cursor_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const release_params = struct {
@@ -2020,11 +2020,11 @@ pub const wayland = struct {
         /// release the pointer object
         pub fn release(
             self: *const Pointer,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -2109,17 +2109,17 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .enter = try msg.parse_data(Event.Enter, data) },
-                    1 => .{ .leave = try msg.parse_data(Event.Leave, data) },
-                    2 => .{ .motion = try msg.parse_data(Event.Motion, data) },
-                    3 => .{ .button = try msg.parse_data(Event.Button, data) },
-                    4 => .{ .axis = try msg.parse_data(Event.Axis, data) },
-                    5 => .{ .frame = try msg.parse_data(Event.Frame, data) },
-                    6 => .{ .axis_source = try msg.parse_data(Event.AxisSource, data) },
-                    7 => .{ .axis_stop = try msg.parse_data(Event.AxisStop, data) },
-                    8 => .{ .axis_discrete = try msg.parse_data(Event.AxisDiscrete, data) },
-                    9 => .{ .axis_value120 = try msg.parse_data(Event.AxisValue120, data) },
-                    10 => .{ .axis_relative_direction = try msg.parse_data(Event.AxisRelativeDirection, data) },
+                    0 => .{ .enter = try Connection.parse_wire_ev(Event.Enter, data) },
+                    1 => .{ .leave = try Connection.parse_wire_ev(Event.Leave, data) },
+                    2 => .{ .motion = try Connection.parse_wire_ev(Event.Motion, data) },
+                    3 => .{ .button = try Connection.parse_wire_ev(Event.Button, data) },
+                    4 => .{ .axis = try Connection.parse_wire_ev(Event.Axis, data) },
+                    5 => .{ .frame = try Connection.parse_wire_ev(Event.Frame, data) },
+                    6 => .{ .axis_source = try Connection.parse_wire_ev(Event.AxisSource, data) },
+                    7 => .{ .axis_stop = try Connection.parse_wire_ev(Event.AxisStop, data) },
+                    8 => .{ .axis_discrete = try Connection.parse_wire_ev(Event.AxisDiscrete, data) },
+                    9 => .{ .axis_value120 = try Connection.parse_wire_ev(Event.AxisValue120, data) },
+                    10 => .{ .axis_relative_direction = try Connection.parse_wire_ev(Event.AxisRelativeDirection, data) },
                     else => {
                         log.warn("Unknown pointer event: {d}", .{op});
                         return error.UnknownEvent;
@@ -2161,11 +2161,11 @@ pub const wayland = struct {
         /// release the keyboard object
         pub fn release(
             self: *const Keyboard,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -2220,12 +2220,12 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .keymap = try msg.parse_data(Event.Keymap, data) },
-                    1 => .{ .enter = try msg.parse_data(Event.Enter, data) },
-                    2 => .{ .leave = try msg.parse_data(Event.Leave, data) },
-                    3 => .{ .key = try msg.parse_data(Event.Key, data) },
-                    4 => .{ .modifiers = try msg.parse_data(Event.Modifiers, data) },
-                    5 => .{ .repeat_info = try msg.parse_data(Event.RepeatInfo, data) },
+                    0 => .{ .keymap = try Connection.parse_wire_ev(Event.Keymap, data) },
+                    1 => .{ .enter = try Connection.parse_wire_ev(Event.Enter, data) },
+                    2 => .{ .leave = try Connection.parse_wire_ev(Event.Leave, data) },
+                    3 => .{ .key = try Connection.parse_wire_ev(Event.Key, data) },
+                    4 => .{ .modifiers = try Connection.parse_wire_ev(Event.Modifiers, data) },
+                    5 => .{ .repeat_info = try Connection.parse_wire_ev(Event.RepeatInfo, data) },
                     else => {
                         log.warn("Unknown keyboard event: {d}", .{op});
                         return error.UnknownEvent;
@@ -2251,11 +2251,11 @@ pub const wayland = struct {
         /// release the touch object
         pub fn release(
             self: *const Touch,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -2312,13 +2312,13 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .down = try msg.parse_data(Event.Down, data) },
-                    1 => .{ .up = try msg.parse_data(Event.Up, data) },
-                    2 => .{ .motion = try msg.parse_data(Event.Motion, data) },
-                    3 => .{ .frame = try msg.parse_data(Event.Frame, data) },
-                    4 => .{ .cancel = try msg.parse_data(Event.Cancel, data) },
-                    5 => .{ .shape = try msg.parse_data(Event.Shape, data) },
-                    6 => .{ .orientation = try msg.parse_data(Event.Orientation, data) },
+                    0 => .{ .down = try Connection.parse_wire_ev(Event.Down, data) },
+                    1 => .{ .up = try Connection.parse_wire_ev(Event.Up, data) },
+                    2 => .{ .motion = try Connection.parse_wire_ev(Event.Motion, data) },
+                    3 => .{ .frame = try Connection.parse_wire_ev(Event.Frame, data) },
+                    4 => .{ .cancel = try Connection.parse_wire_ev(Event.Cancel, data) },
+                    5 => .{ .shape = try Connection.parse_wire_ev(Event.Shape, data) },
+                    6 => .{ .orientation = try Connection.parse_wire_ev(Event.Orientation, data) },
                     else => {
                         log.warn("Unknown touch event: {d}", .{op});
                         return error.UnknownEvent;
@@ -2415,11 +2415,11 @@ pub const wayland = struct {
         /// release the output object
         pub fn release(
             self: *const Output,
-            writer: anytype,
+            connection: Connection,
             params: release_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -2469,12 +2469,12 @@ pub const wayland = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .geometry = try msg.parse_data(Event.Geometry, data) },
-                    1 => .{ .mode = try msg.parse_data(Event.Mode, data) },
-                    2 => .{ .done = try msg.parse_data(Event.Done, data) },
-                    3 => .{ .scale = try msg.parse_data(Event.Scale, data) },
-                    4 => .{ .name = try msg.parse_data(Event.Name, data) },
-                    5 => .{ .description = try msg.parse_data(Event.Description, data) },
+                    0 => .{ .geometry = try Connection.parse_wire_ev(Event.Geometry, data) },
+                    1 => .{ .mode = try Connection.parse_wire_ev(Event.Mode, data) },
+                    2 => .{ .done = try Connection.parse_wire_ev(Event.Done, data) },
+                    3 => .{ .scale = try Connection.parse_wire_ev(Event.Scale, data) },
+                    4 => .{ .name = try Connection.parse_wire_ev(Event.Name, data) },
+                    5 => .{ .description = try Connection.parse_wire_ev(Event.Description, data) },
                     else => {
                         log.warn("Unknown output event: {d}", .{op});
                         return error.UnknownEvent;
@@ -2500,11 +2500,11 @@ pub const wayland = struct {
         /// destroy region
         pub fn destroy(
             self: *const Region,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const add_params = struct {
@@ -2522,10 +2522,10 @@ pub const wayland = struct {
         /// add rectangle to region
         pub fn add(
             self: *const Region,
-            writer: anytype,
+            connection: Connection,
             params: add_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const subtract_params = struct {
@@ -2543,10 +2543,10 @@ pub const wayland = struct {
         /// subtract rectangle from region
         pub fn subtract(
             self: *const Region,
-            writer: anytype,
+            connection: Connection,
             params: subtract_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
     };
 
@@ -2571,11 +2571,11 @@ pub const wayland = struct {
         /// unbind from the subcompositor interface
         pub fn destroy(
             self: *const Subcompositor,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const get_subsurface_params = struct {
@@ -2591,19 +2591,19 @@ pub const wayland = struct {
         /// give a surface the role sub-surface
         pub fn get_subsurface(
             self: *const Subcompositor,
-            writer: anytype,
+            connection: Connection,
             params: get_subsurface_params,
         ) !wl_subsurface {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_subsurface);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_subsurface);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_subsurface);
+                    const _res = try connection.registry.register(wl_subsurface);
                     var write_params: get_subsurface_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -2630,11 +2630,11 @@ pub const wayland = struct {
         /// remove sub-surface interface
         pub fn destroy(
             self: *const Subsurface,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const set_position_params = struct {
@@ -2648,10 +2648,10 @@ pub const wayland = struct {
         /// reposition the sub-surface
         pub fn set_position(
             self: *const Subsurface,
-            writer: anytype,
+            connection: Connection,
             params: set_position_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const place_above_params = struct {
@@ -2663,10 +2663,10 @@ pub const wayland = struct {
         /// restack the sub-surface
         pub fn place_above(
             self: *const Subsurface,
-            writer: anytype,
+            connection: Connection,
             params: place_above_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const place_below_params = struct {
@@ -2678,10 +2678,10 @@ pub const wayland = struct {
         /// restack the sub-surface
         pub fn place_below(
             self: *const Subsurface,
-            writer: anytype,
+            connection: Connection,
             params: place_below_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_sync_params = struct {
@@ -2691,10 +2691,10 @@ pub const wayland = struct {
         /// set sub-surface to synchronized mode
         pub fn set_sync(
             self: *const Subsurface,
-            writer: anytype,
+            connection: Connection,
             params: set_sync_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_desync_params = struct {
@@ -2704,10 +2704,10 @@ pub const wayland = struct {
         /// set sub-surface to desynchronized mode
         pub fn set_desync(
             self: *const Subsurface,
-            writer: anytype,
+            connection: Connection,
             params: set_desync_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
     };
 };
@@ -2772,11 +2772,11 @@ pub const xdg_shell = struct {
         /// destroy xdg_wm_base
         pub fn destroy(
             self: *const WmBase,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const create_positioner_params = struct {
@@ -2787,19 +2787,19 @@ pub const xdg_shell = struct {
         /// create a positioner object
         pub fn create_positioner(
             self: *const WmBase,
-            writer: anytype,
+            connection: Connection,
             params: create_positioner_params,
         ) !xdg_positioner {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, xdg_positioner);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, xdg_positioner);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(xdg_positioner);
+                    const _res = try connection.registry.register(xdg_positioner);
                     var write_params: create_positioner_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -2815,19 +2815,19 @@ pub const xdg_shell = struct {
         /// create a shell surface from a surface
         pub fn get_xdg_surface(
             self: *const WmBase,
-            writer: anytype,
+            connection: Connection,
             params: get_xdg_surface_params,
         ) !xdg_surface {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, xdg_surface);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, xdg_surface);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(xdg_surface);
+                    const _res = try connection.registry.register(xdg_surface);
                     var write_params: get_xdg_surface_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -2843,10 +2843,10 @@ pub const xdg_shell = struct {
         /// respond to a ping event
         pub fn pong(
             self: *const WmBase,
-            writer: anytype,
+            connection: Connection,
             params: pong_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -2858,7 +2858,7 @@ pub const xdg_shell = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .ping = try msg.parse_data(Event.Ping, data) },
+                    0 => .{ .ping = try Connection.parse_wire_ev(Event.Ping, data) },
                     else => {
                         log.warn("Unknown wm_base event: {d}", .{op});
                         return error.UnknownEvent;
@@ -2944,11 +2944,11 @@ pub const xdg_shell = struct {
         /// destroy the xdg_positioner object
         pub fn destroy(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const set_size_params = struct {
@@ -2962,10 +2962,10 @@ pub const xdg_shell = struct {
         /// set the size of the to-be positioned rectangle
         pub fn set_size(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_size_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_anchor_rect_params = struct {
@@ -2983,10 +2983,10 @@ pub const xdg_shell = struct {
         /// set the anchor rectangle within the parent surface
         pub fn set_anchor_rect(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_anchor_rect_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_anchor_params = struct {
@@ -2998,10 +2998,10 @@ pub const xdg_shell = struct {
         /// set anchor rectangle anchor
         pub fn set_anchor(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_anchor_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_gravity_params = struct {
@@ -3013,10 +3013,10 @@ pub const xdg_shell = struct {
         /// set child surface gravity
         pub fn set_gravity(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_gravity_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_constraint_adjustment_params = struct {
@@ -3028,10 +3028,10 @@ pub const xdg_shell = struct {
         /// set the adjustment to be done when constrained
         pub fn set_constraint_adjustment(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_constraint_adjustment_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_offset_params = struct {
@@ -3045,10 +3045,10 @@ pub const xdg_shell = struct {
         /// set surface position offset
         pub fn set_offset(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_offset_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_reactive_params = struct {
@@ -3058,10 +3058,10 @@ pub const xdg_shell = struct {
         /// continuously reconstrain the surface
         pub fn set_reactive(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_reactive_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_parent_size_params = struct {
@@ -3075,10 +3075,10 @@ pub const xdg_shell = struct {
         ///
         pub fn set_parent_size(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_parent_size_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_parent_configure_params = struct {
@@ -3090,10 +3090,10 @@ pub const xdg_shell = struct {
         /// set parent configure this is a response to
         pub fn set_parent_configure(
             self: *const Positioner,
-            writer: anytype,
+            connection: Connection,
             params: set_parent_configure_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
     };
 
@@ -3126,11 +3126,11 @@ pub const xdg_shell = struct {
         /// destroy the xdg_surface
         pub fn destroy(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const get_toplevel_params = struct {
@@ -3141,19 +3141,19 @@ pub const xdg_shell = struct {
         /// assign the xdg_toplevel surface role
         pub fn get_toplevel(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: get_toplevel_params,
         ) !xdg_toplevel {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, xdg_toplevel);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, xdg_toplevel);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(xdg_toplevel);
+                    const _res = try connection.registry.register(xdg_toplevel);
                     var write_params: get_toplevel_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -3170,19 +3170,19 @@ pub const xdg_shell = struct {
         /// assign the xdg_popup surface role
         pub fn get_popup(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: get_popup_params,
         ) !xdg_popup {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, xdg_popup);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, xdg_popup);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(xdg_popup);
+                    const _res = try connection.registry.register(xdg_popup);
                     var write_params: get_popup_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -3200,10 +3200,10 @@ pub const xdg_shell = struct {
         /// set the new window geometry
         pub fn set_window_geometry(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: set_window_geometry_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const ack_configure_params = struct {
@@ -3215,10 +3215,10 @@ pub const xdg_shell = struct {
         /// ack a configure event
         pub fn ack_configure(
             self: *const Surface,
-            writer: anytype,
+            connection: Connection,
             params: ack_configure_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -3230,7 +3230,7 @@ pub const xdg_shell = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .configure = try msg.parse_data(Event.Configure, data) },
+                    0 => .{ .configure = try Connection.parse_wire_ev(Event.Configure, data) },
                     else => {
                         log.warn("Unknown surface event: {d}", .{op});
                         return error.UnknownEvent;
@@ -3301,11 +3301,11 @@ pub const xdg_shell = struct {
         /// destroy the xdg_toplevel
         pub fn destroy(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const set_parent_params = struct {
@@ -3316,10 +3316,10 @@ pub const xdg_shell = struct {
         /// set the parent of this surface
         pub fn set_parent(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_parent_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_title_params = struct {
@@ -3330,10 +3330,10 @@ pub const xdg_shell = struct {
         /// set surface title
         pub fn set_title(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_title_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_app_id_params = struct {
@@ -3344,10 +3344,10 @@ pub const xdg_shell = struct {
         /// set application ID
         pub fn set_app_id(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_app_id_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const show_window_menu_params = struct {
@@ -3365,10 +3365,10 @@ pub const xdg_shell = struct {
         /// show the window menu
         pub fn show_window_menu(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: show_window_menu_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const move_params = struct {
@@ -3382,10 +3382,10 @@ pub const xdg_shell = struct {
         /// start an interactive move
         pub fn move(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: move_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const resize_params = struct {
@@ -3401,10 +3401,10 @@ pub const xdg_shell = struct {
         /// start an interactive resize
         pub fn resize(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: resize_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_max_size_params = struct {
@@ -3416,10 +3416,10 @@ pub const xdg_shell = struct {
         /// set the maximum size
         pub fn set_max_size(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_max_size_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_min_size_params = struct {
@@ -3431,10 +3431,10 @@ pub const xdg_shell = struct {
         /// set the minimum size
         pub fn set_min_size(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_min_size_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_maximized_params = struct {
@@ -3444,10 +3444,10 @@ pub const xdg_shell = struct {
         /// maximize the window
         pub fn set_maximized(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_maximized_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const unset_maximized_params = struct {
@@ -3457,10 +3457,10 @@ pub const xdg_shell = struct {
         /// unmaximize the window
         pub fn unset_maximized(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: unset_maximized_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_fullscreen_params = struct {
@@ -3471,10 +3471,10 @@ pub const xdg_shell = struct {
         /// set the window as fullscreen on an output
         pub fn set_fullscreen(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_fullscreen_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const unset_fullscreen_params = struct {
@@ -3484,10 +3484,10 @@ pub const xdg_shell = struct {
         /// unset the window as fullscreen
         pub fn unset_fullscreen(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: unset_fullscreen_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const set_minimized_params = struct {
@@ -3497,10 +3497,10 @@ pub const xdg_shell = struct {
         /// set the window as minimized
         pub fn set_minimized(
             self: *const Toplevel,
-            writer: anytype,
+            connection: Connection,
             params: set_minimized_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -3531,10 +3531,10 @@ pub const xdg_shell = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .configure = try msg.parse_data(Event.Configure, data) },
-                    1 => .{ .close = try msg.parse_data(Event.Close, data) },
-                    2 => .{ .configure_bounds = try msg.parse_data(Event.ConfigureBounds, data) },
-                    3 => .{ .wm_capabilities = try msg.parse_data(Event.WmCapabilities, data) },
+                    0 => .{ .configure = try Connection.parse_wire_ev(Event.Configure, data) },
+                    1 => .{ .close = try Connection.parse_wire_ev(Event.Close, data) },
+                    2 => .{ .configure_bounds = try Connection.parse_wire_ev(Event.ConfigureBounds, data) },
+                    3 => .{ .wm_capabilities = try Connection.parse_wire_ev(Event.WmCapabilities, data) },
                     else => {
                         log.warn("Unknown toplevel event: {d}", .{op});
                         return error.UnknownEvent;
@@ -3563,11 +3563,11 @@ pub const xdg_shell = struct {
         /// remove xdg_popup interface
         pub fn destroy(
             self: *const Popup,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const grab_params = struct {
@@ -3581,10 +3581,10 @@ pub const xdg_shell = struct {
         /// make the popup take an explicit grab
         pub fn grab(
             self: *const Popup,
-            writer: anytype,
+            connection: Connection,
             params: grab_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const reposition_params = struct {
@@ -3597,10 +3597,10 @@ pub const xdg_shell = struct {
         /// recalculate the popup's location
         pub fn reposition(
             self: *const Popup,
-            writer: anytype,
+            connection: Connection,
             params: reposition_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -3625,9 +3625,9 @@ pub const xdg_shell = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .configure = try msg.parse_data(Event.Configure, data) },
-                    1 => .{ .popup_done = try msg.parse_data(Event.PopupDone, data) },
-                    2 => .{ .repositioned = try msg.parse_data(Event.Repositioned, data) },
+                    0 => .{ .configure = try Connection.parse_wire_ev(Event.Configure, data) },
+                    1 => .{ .popup_done = try Connection.parse_wire_ev(Event.PopupDone, data) },
+                    2 => .{ .repositioned = try Connection.parse_wire_ev(Event.Repositioned, data) },
                     else => {
                         log.warn("Unknown popup event: {d}", .{op});
                         return error.UnknownEvent;
@@ -3666,11 +3666,11 @@ pub const xdg_decoration_unstable_v1 = struct {
         /// destroy the decoration manager object
         pub fn destroy(
             self: *const DecorationManagerV1,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const get_toplevel_decoration_params = struct {
@@ -3682,19 +3682,19 @@ pub const xdg_decoration_unstable_v1 = struct {
         /// create a new toplevel decoration object
         pub fn get_toplevel_decoration(
             self: *const DecorationManagerV1,
-            writer: anytype,
+            connection: Connection,
             params: get_toplevel_decoration_params,
         ) !zxdg_toplevel_decoration_v1 {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, zxdg_toplevel_decoration_v1);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, zxdg_toplevel_decoration_v1);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(zxdg_toplevel_decoration_v1);
+                    const _res = try connection.registry.register(zxdg_toplevel_decoration_v1);
                     var write_params: get_toplevel_decoration_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -3734,11 +3734,11 @@ pub const xdg_decoration_unstable_v1 = struct {
         /// destroy the decoration object
         pub fn destroy(
             self: *const ToplevelDecorationV1,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const set_mode_params = struct {
@@ -3750,10 +3750,10 @@ pub const xdg_decoration_unstable_v1 = struct {
         /// set the decoration mode
         pub fn set_mode(
             self: *const ToplevelDecorationV1,
-            writer: anytype,
+            connection: Connection,
             params: set_mode_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const unset_mode_params = struct {
@@ -3763,10 +3763,10 @@ pub const xdg_decoration_unstable_v1 = struct {
         /// unset the decoration mode
         pub fn unset_mode(
             self: *const ToplevelDecorationV1,
-            writer: anytype,
+            connection: Connection,
             params: unset_mode_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const Event = union(enum) {
@@ -3778,7 +3778,7 @@ pub const xdg_decoration_unstable_v1 = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .configure = try msg.parse_data(Event.Configure, data) },
+                    0 => .{ .configure = try Connection.parse_wire_ev(Event.Configure, data) },
                     else => {
                         log.warn("Unknown toplevel_decoration_v1 event: {d}", .{op});
                         return error.UnknownEvent;
@@ -3814,11 +3814,11 @@ pub const linux_dmabuf_v1 = struct {
         /// unbind the factory
         pub fn destroy(
             self: *const LinuxDmabufV1,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const create_params_params = struct {
@@ -3830,19 +3830,19 @@ pub const linux_dmabuf_v1 = struct {
         /// create a temporary object for buffer parameters
         pub fn create_params(
             self: *const LinuxDmabufV1,
-            writer: anytype,
+            connection: Connection,
             params: create_params_params,
         ) !zwp_linux_buffer_params_v1 {
             const res_id = init: {
                 if (params.params_id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, zwp_linux_buffer_params_v1);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, zwp_linux_buffer_params_v1);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(zwp_linux_buffer_params_v1);
+                    const _res = try connection.registry.register(zwp_linux_buffer_params_v1);
                     var write_params: create_params_params = params;
                     write_params.params_id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -3857,19 +3857,19 @@ pub const linux_dmabuf_v1 = struct {
         /// get default feedback
         pub fn get_default_feedback(
             self: *const LinuxDmabufV1,
-            writer: anytype,
+            connection: Connection,
             params: get_default_feedback_params,
         ) !zwp_linux_dmabuf_feedback_v1 {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, zwp_linux_dmabuf_feedback_v1);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, zwp_linux_dmabuf_feedback_v1);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(zwp_linux_dmabuf_feedback_v1);
+                    const _res = try connection.registry.register(zwp_linux_dmabuf_feedback_v1);
                     var write_params: get_default_feedback_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -3885,19 +3885,19 @@ pub const linux_dmabuf_v1 = struct {
         /// get feedback for a surface
         pub fn get_surface_feedback(
             self: *const LinuxDmabufV1,
-            writer: anytype,
+            connection: Connection,
             params: get_surface_feedback_params,
         ) !zwp_linux_dmabuf_feedback_v1 {
             const res_id = init: {
                 if (params.id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, zwp_linux_dmabuf_feedback_v1);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, zwp_linux_dmabuf_feedback_v1);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(zwp_linux_dmabuf_feedback_v1);
+                    const _res = try connection.registry.register(zwp_linux_dmabuf_feedback_v1);
                     var write_params: get_surface_feedback_params = params;
                     write_params.id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -3921,8 +3921,8 @@ pub const linux_dmabuf_v1 = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .format = try msg.parse_data(Event.Format, data) },
-                    1 => .{ .modifier = try msg.parse_data(Event.Modifier, data) },
+                    0 => .{ .format = try Connection.parse_wire_ev(Event.Format, data) },
+                    1 => .{ .modifier = try Connection.parse_wire_ev(Event.Modifier, data) },
                     else => {
                         log.warn("Unknown linux_dmabuf_v1 event: {d}", .{op});
                         return error.UnknownEvent;
@@ -4002,11 +4002,11 @@ pub const linux_dmabuf_v1 = struct {
         /// delete this object, used or not
         pub fn destroy(
             self: *const LinuxBufferParamsV1,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const add_params = struct {
@@ -4028,10 +4028,10 @@ pub const linux_dmabuf_v1 = struct {
         /// add a dmabuf to the temporary set
         pub fn add(
             self: *const LinuxBufferParamsV1,
-            writer: anytype,
+            connection: Connection,
             params: add_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const create_params = struct {
@@ -4049,10 +4049,10 @@ pub const linux_dmabuf_v1 = struct {
         /// create a wl_buffer from the given dmabufs
         pub fn create(
             self: *const LinuxBufferParamsV1,
-            writer: anytype,
+            connection: Connection,
             params: create_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
+            try connection.write(params, self.id, @TypeOf(params).op);
         }
 
         pub const create_immed_params = struct {
@@ -4072,19 +4072,19 @@ pub const linux_dmabuf_v1 = struct {
         /// immediately create a wl_buffer from the given dmabufs
         pub fn create_immed(
             self: *const LinuxBufferParamsV1,
-            writer: anytype,
+            connection: Connection,
             params: create_immed_params,
         ) !wl_buffer {
             const res_id = init: {
                 if (params.buffer_id) |id| {
-                    try msg.write(writer, @TypeOf(params), params, self.id);
-                    try interface.registry.insert(id, wl_buffer);
+                    try connection.write(params, self.id, @TypeOf(params).op);
+                    try connection.registry.insert(id, wl_buffer);
                     break :init id;
                 } else {
-                    const _res = try interface.registry.register(wl_buffer);
+                    const _res = try connection.registry.register(wl_buffer);
                     var write_params: create_immed_params = params;
                     write_params.buffer_id = _res.id;
-                    try msg.write(writer, @TypeOf(params), write_params, self.id);
+                    try connection.write(write_params, self.id, @TypeOf(params).op);
                     break :init _res.id;
                 }
             };
@@ -4104,8 +4104,8 @@ pub const linux_dmabuf_v1 = struct {
             pub const Failed = struct {};
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .created = try msg.parse_data(Event.Created, data) },
-                    1 => .{ .failed = try msg.parse_data(Event.Failed, data) },
+                    0 => .{ .created = try Connection.parse_wire_ev(Event.Created, data) },
+                    1 => .{ .failed = try Connection.parse_wire_ev(Event.Failed, data) },
                     else => {
                         log.warn("Unknown linux_buffer_params_v1 event: {d}", .{op});
                         return error.UnknownEvent;
@@ -4165,11 +4165,11 @@ pub const linux_dmabuf_v1 = struct {
         /// destroy the feedback object
         pub fn destroy(
             self: *const LinuxDmabufFeedbackV1,
-            writer: anytype,
+            connection: Connection,
             params: destroy_params,
         ) !void {
-            try msg.write(writer, @TypeOf(params), params, self.id);
-            interface.registry.remove(self.*);
+            try connection.write(params, self.id, @TypeOf(params).op);
+            connection.registry.remove(self.*);
         }
 
         pub const Event = union(enum) {
@@ -4214,13 +4214,13 @@ pub const linux_dmabuf_v1 = struct {
             };
             pub fn parse(op: u32, data: []const u8) !Event {
                 return switch (op) {
-                    0 => .{ .done = try msg.parse_data(Event.Done, data) },
-                    1 => .{ .format_table = try msg.parse_data(Event.FormatTable, data) },
-                    2 => .{ .main_device = try msg.parse_data(Event.MainDevice, data) },
-                    3 => .{ .tranche_done = try msg.parse_data(Event.TrancheDone, data) },
-                    4 => .{ .tranche_target_device = try msg.parse_data(Event.TrancheTargetDevice, data) },
-                    5 => .{ .tranche_formats = try msg.parse_data(Event.TrancheFormats, data) },
-                    6 => .{ .tranche_flags = try msg.parse_data(Event.TrancheFlags, data) },
+                    0 => .{ .done = try Connection.parse_wire_ev(Event.Done, data) },
+                    1 => .{ .format_table = try Connection.parse_wire_ev(Event.FormatTable, data) },
+                    2 => .{ .main_device = try Connection.parse_wire_ev(Event.MainDevice, data) },
+                    3 => .{ .tranche_done = try Connection.parse_wire_ev(Event.TrancheDone, data) },
+                    4 => .{ .tranche_target_device = try Connection.parse_wire_ev(Event.TrancheTargetDevice, data) },
+                    5 => .{ .tranche_formats = try Connection.parse_wire_ev(Event.TrancheFormats, data) },
+                    6 => .{ .tranche_flags = try Connection.parse_wire_ev(Event.TrancheFlags, data) },
                     else => {
                         log.warn("Unknown linux_dmabuf_feedback_v1 event: {d}", .{op});
                         return error.UnknownEvent;
