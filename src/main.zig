@@ -15,11 +15,7 @@ pub fn main() !void {
     
     const arena: *Arena = .init(.default);
     defer arena.release();
-    const conn = linux.connect_wayland(arena) catch |err| {
-        log.err("Failed to connect Wayland session with err :: {s}", .{@errorName(err)});
-        return err;
-    };
-
+    const conn: linux.Connection = try .init(arena);
     log.debug("successfully connected wayland socket :: fd={d}", .{@as(i32, conn.sock)});
 
     var buf: [2048]u8 = undefined;
@@ -29,23 +25,37 @@ pub fn main() !void {
     {
         // write
         {
-            const header: Header = .{
-                .id = 1,
-                .op = 1,
-                .size = @sizeOf(Header) + @sizeOf(u32),
-            };
-            var write_buf: [@sizeOf(Header) + @sizeOf(u32)]u8 = @splat(0);
-            const registry_id: u32 = 2;
+            // Manual Display.get_registry write
+            // {
+            //     const header: Header = .{
+            //         .id = 1,
+            //         .op = 1,
+            //         .size = @sizeOf(Header) + @sizeOf(u32),
+            //     };
+            //     var write_buf: [@sizeOf(Header) + @sizeOf(u32)]u8 = @splat(0);
+            //     const registry_id: u32 = 2;
 
-            @memcpy(write_buf[0..@sizeOf(Header)], std.mem.asBytes(&header));
-            @memcpy(write_buf[@sizeOf(Header)..], std.mem.asBytes(&registry_id));
+            //     @memcpy(write_buf[0..@sizeOf(Header)], std.mem.asBytes(&header));
+            //     @memcpy(write_buf[@sizeOf(Header)..], std.mem.asBytes(&registry_id));
 
-            const bytes_written = std.posix.write(conn.sock, &write_buf) catch |err| {
-                log.err("Write failed with err :: {s}", .{@errorName(err)});
-                return err;
-            };
 
-            log.debug("Successfully wrote {d} bytes to socket", .{bytes_written});
+            //     const bytes_written = std.posix.write(conn.sock, &write_buf) catch |err| {
+            //         log.err("Write failed with err :: {s}", .{@errorName(err)});
+            //         return err;
+            //     };
+
+            //     log.debug("Successfully wrote {d} bytes to socket", .{bytes_written});
+            // }
+
+            // Abstracted Display.get_registry
+            {
+                const Obj = struct {
+                    id: u32,
+                };
+
+                const registry: Obj = .{ .id = 2 };
+                try conn.write(registry, 1, 1);
+            }
         }
 
         // read
