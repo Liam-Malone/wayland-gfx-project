@@ -368,19 +368,25 @@ pub const Connection = struct {
 const Registry = struct {
     cur_idx: u32,
     objects: []Object,
+    parse_fns: []?EventParseFn,
     free_list: IndexFreeQueue = .{},
 
     pub fn init(arena: *Arena, display: protocols.wayland.Display) Registry {
         const objects = arena.push(Object, 256);
+        const parse_fns = arena.push(?EventParseFn, 256);
         for (objects) |*obj| {
             obj.* = .{ .nil = {} };
         }
         objects[1] = .{ .wl_display = display };
         objects[2] = .{ .wl_registry = .{ .id = 2 } };
 
+        parse_fns[1] = @unionInit(EventParseFn, "wl_display", protocols.wayland.Display.Event.parse);
+        parse_fns[2] = @unionInit(EventParseFn, "wl_registry", protocols.wayland.Registry.Event.parse);
+
         return .{
             .cur_idx = 2,
             .objects = objects,
+            .parse_fns = parse_fns,
         };
     }
 
@@ -397,6 +403,11 @@ const Registry = struct {
             .id = idx,
         };
     }
+
+    pub fn get_parse_fn(self: *const Registry, idx: u32) ?EventParseFn {
+        return self.parse_fns[idx];
+    }
+
 
     const IndexFreeQueue = struct {
         buf: [QueueSize]u32 = @splat(0),
@@ -424,6 +435,7 @@ const Registry = struct {
         }
     };
 
+    // Meta-Programmed Types
     const ObjectTag = blk: {
         const meta = std.meta;
         const enum_len = len_blk: {
@@ -532,7 +544,7 @@ pub const EventIterator = struct {
         };
     }
 
-    pub fn next(iter: *EventIterator) ?Event {
+    pub fn next(iter: *EventIterator) ?WaylandEvent {
         return iter.ev_queue.next();
     }
 
@@ -541,8 +553,8 @@ pub const EventIterator = struct {
 
             var iov = [_]std.posix.iovec{
                 .{
-                    .base = iter.buf.ptr,
-                    .len = iter.buf.len,
+                    .base = iter.buf[iter.write_idx..].ptr,
+                    .len = iter.buf[iter.write_idx..].len,
                 },
             };
 
@@ -558,7 +570,7 @@ pub const EventIterator = struct {
 
             const rc = std.os.linux.recvmsg(iter.conn.sock,
                 &message,
-                std.os.linux.MSG.WAITALL,
+                0,
             );
             if (rc > iter.buf.len) {
                 const err = std.posix.errno(rc);
@@ -566,22 +578,79 @@ pub const EventIterator = struct {
                 log.err("Socket read failed with err :: {s}", .{@tagName(err)});
                 return error.SocketReadFailed;
             } else {
+                const bytes_read: u32 = @intCast(rc);
+                iter.write_idx += bytes_read;
+                // check for file descriptors
+                {
+                    log.debug("message controllen={d}", .{message.controllen});
+                    var cmsg_iter = cmsghdr.iter(cmsg_buf[0..message.controllen]);
+                    while (cmsg_iter.next()) |cmsg_header| {
+                        if (cmsg_header.type == std.posix.SOL.SOCKET and cmsg_header.level == SCM_RIGHTS) {
+                            iter.fd_queue.push(cmsg_header.data(std.posix.fd_t).*);
+                            log.debug("Found file descriptor of value :: {d}", .{cmsg_header.data(std.posix.fd_t).*});
+                        }
+                    }
+                }
+
+                // standard event processing
+                {
+                    var read_idx: u32 = 0;
+                    while (read_idx < iter.write_idx) {
+                        log.debug("reading event", .{});
+                        const header = std.mem.bytesToValue(Connection.Header, iter.buf[read_idx..][0..@sizeOf(Connection.Header)]);
+                        log.debug("Header :: {{ .id = {d}, .op = {d}, .len = {d} }}", .{
+                            header.id,
+                            header.op,
+                            header.size,
+                        });
+
+                        const msg_size = header.size;
+                        if (read_idx + @sizeOf(Connection.Header) + msg_size <= iter.write_idx) {
+                            break;
+                        }
+                        read_idx += @sizeOf(Connection.Header);
+
+                        const wire_ev: Connection.WireEvent = .{
+                            .header = header,
+                            .data = iter.buf[read_idx..][0..msg_size],
+                        };
+
+                        const parse_fn = iter.conn.registry.get_parse_fn(header.id).?;
+                        const event: WaylandEvent = ev: {
+                            const active_tag = std.meta.activeTag(parse_fn);
+                            try switch (parse_fn) { 
+                                inline else => |pfn| {
+                                    inline for (@typeInfo(WaylandEvent).@"union".fields) |field| {
+                                        if (std.mem.eql(u8, field.name, @tagName(active_tag))) {
+                                            @compileLog("id={d} and {s} == {s} ??", .{header.id, field.name, @tagName(active_tag)});
+                                            break :ev @unionInit(WaylandEvent, field.name, try pfn(header.op, wire_ev.data));
+                                        } else {
+                                            // continue to check the next type
+                                        }
+                                    }
+                                    unreachable;
+                                },
+                            };
+                        };
+                        iter.ev_queue.push(event);
+                    }
+                }
                 log.debug("Received {d} bytes from socket", .{rc});
             }
     }
 
     const EvQueue = struct {
-        data: [Size]Event = undefined,
+        data: [Size]WaylandEvent = undefined,
         read: usize = 0,
         write: usize = 0,
 
-        pub fn push(noalias queue: *EvQueue, event: Event) void {
+        pub fn push(noalias queue: *EvQueue, event: WaylandEvent) void {
             const write_idx = queue.write % queue.data.len;
             queue.data[write_idx] = event;
             queue.write += 1;
         }
 
-        pub fn next(noalias queue: *EvQueue) ?Event {
+        pub fn next(noalias queue: *EvQueue) ?WaylandEvent {
             if (queue.read != queue.write) {
                 defer queue.read += 1;
 
@@ -638,13 +707,8 @@ pub const ObjectEventTag = blk: {
         break :len_blk decl_count;
     };
 
-    var idx: u32 = 1;
-    var fields: [enum_len + 1]std.builtin.Type.EnumField = undefined;
-
-    fields[0] = .{
-        .name = "wire_event",
-        .value = 0,
-    };
+    var idx: u32 = 0;
+    var fields: [enum_len]std.builtin.Type.EnumField = undefined;
 
     for (std.meta.declarations(protocols)) |protocol_decl| {
         const protocol = @field(protocols, protocol_decl.name);
@@ -663,7 +727,7 @@ pub const ObjectEventTag = blk: {
 
     const T = @Type(.{
         .@"enum" = .{
-            .tag_type = std.math.IntFittingRange(0, enum_len + 1),
+            .tag_type = std.math.IntFittingRange(0, enum_len),
             .fields = &fields,
             .decls = &.{},
             .is_exhaustive = true,
@@ -672,7 +736,7 @@ pub const ObjectEventTag = blk: {
     break :blk T;
 };
 
-const Event = blk: {
+const EventParseFn = blk: {
     const union_len = len_blk: {
         var decl_count: usize = 0;
         for (std.meta.declarations(protocols)) |protocol_decl| {
@@ -688,14 +752,56 @@ const Event = blk: {
         break :len_blk decl_count;
     };
 
-    var idx: u32 = 1;
-    var fields: [union_len + 1]std.builtin.Type.UnionField = undefined;
+    var idx: u32 = 0;
+    var fields: [union_len]std.builtin.Type.UnionField = undefined;
 
-    fields[0] = .{
-        .name = "wire_event",
-        .type = Connection.WireEvent,
-        .alignment = @alignOf(Connection.WireEvent),
+    for (std.meta.declarations(protocols)) |protocol_decl| {
+        const protocol = @field(protocols, protocol_decl.name);
+
+        for (@typeInfo(protocol).@"struct".decls) |interface_decl| {
+            const wl_interface = @field(protocol, interface_decl.name);
+
+            if (@hasDecl(wl_interface, "Event")) {
+                const event_t = @field(wl_interface, "Event");
+                fields[idx] = .{
+                    .name = @field(wl_interface, "Name") ++ "",
+                    .type = *const @TypeOf(@field(event_t, "parse")),
+                    .alignment = @alignOf(*const @TypeOf(@field(event_t, "parse"))),
+                };
+                idx += 1;
+            }
+        }
+    }
+
+    const T = @Type(.{
+        .@"union" = .{
+            .layout = .auto,
+            .tag_type = ObjectEventTag,
+            .fields = &fields,
+            .decls = &.{},
+        },
+    });
+    break :blk T;
+};
+
+const WaylandEvent = blk: {
+    const union_len = len_blk: {
+        var decl_count: usize = 0;
+        for (std.meta.declarations(protocols)) |protocol_decl| {
+            const protocol = @field(protocols, protocol_decl.name);
+
+            for (@typeInfo(protocol).@"struct".decls) |interface_decl| {
+                const wl_interface = @field(protocol, interface_decl.name);
+                if (@hasDecl(wl_interface, "Event")) {
+                    decl_count += 1;
+                }
+            }
+        }
+        break :len_blk decl_count;
     };
+
+    var idx: u32 = 0;
+    var fields: [union_len]std.builtin.Type.UnionField = undefined;
 
     for (std.meta.declarations(protocols)) |protocol_decl| {
         const protocol = @field(protocols, protocol_decl.name);
