@@ -595,16 +595,7 @@ pub const EventIterator = struct {
             {
                 var read_idx: u32 = 0;
                 while (read_idx < iter.write_idx) {
-                    log.debug("START :: read_idx={d}, write_idx={d}", .{read_idx, iter.write_idx});
-                    defer log.debug("END :: read_idx={d}, write_idx={d}", .{read_idx, iter.write_idx});
-                    log.debug("reading event", .{});
                     const header = std.mem.bytesToValue(Connection.Header, iter.buf[read_idx..][0..@sizeOf(Connection.Header)]);
-                    log.debug("Header :: {{ .id = {d}, .op = {d}, .size = {d} }}", .{
-                        header.id,
-                        header.op,
-                        header.size,
-                    });
-
                     const msg_size = header.size;
                     const data_end = read_idx + msg_size;
 
@@ -620,20 +611,26 @@ pub const EventIterator = struct {
                     const event: Event = ev: {
                         inline for (@typeInfo(@TypeOf(parse_fn)).@"union".fields) |field| {
                             if (std.mem.eql(u8, field.name, @tagName(active_tag))) {
+                                const event = try @field(parse_fn, field.name)(header.op, msg_data);
+                                var ev: @TypeOf(event) = event;
+                                if (@hasField(@TypeOf(event), "fd")) {
+                                    ev.fd = iter.fd_queue.next().?;
+                                }
                                 break :ev @unionInit(
                                     Event,
                                     field.name,
-                                    try @field(parse_fn, field.name)(header.op, msg_data),
+                                    ev,
                                 );
                             }
                         }
                         unreachable;
                     };
-                    if (std.mem.eql(u8, @tagName(active_tag), "wl_registry")) {
-                        log.debug("interface :: {s}", .{event.wl_registry.global.interface});
-                    }
                     iter.ev_queue.push(event);
                 }
+
+                const bytes_to_move = iter.write_idx - read_idx;
+                @memmove(iter.buf[0..bytes_to_move], iter.buf[read_idx..iter.write_idx]);
+                iter.write_idx -= read_idx;
             }
             log.debug("Received {d} bytes from socket", .{rc});
         }
