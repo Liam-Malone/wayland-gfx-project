@@ -34,7 +34,7 @@ pub fn main() !void {
                 },
                 .wl_registry => |registry_ev| switch (registry_ev) {
                     .global => |global| {
-                        log.debug("global :: {any}", .{global});
+                        log.debug("global :: {{ .name={d}, .interface={s}, .version={d} }}", .{global.name, global.interface, global.version});
                     },
                     else => {
                         log.debug("unexpected registry event :: {any}", .{registry_ev});

@@ -442,7 +442,7 @@ pub fn main() !void {
     var protocol_filename: ?[]const u8 = null;
 
     while (args.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--help")) {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             help_msg(prog_name) catch |err| {
                 std.log.err("Failed to write to stdout with err: {s}", .{@errorName(err)});
             };
@@ -572,7 +572,10 @@ fn help_msg(prog_name: []const u8) !void {
         \\\ Utility tool to generate Zig bindings from Wayland protocol XML specifications
         \\\
         \\\ Usage: {s} [options] <xml source> <zig output path>
-        \\\ -h --help    Show this message and exit
+        \\\ -h --help           Show this message and exit
+        \\\ --cli               Dump output to console
+        \\\ --out <filename>    Specify output filename
+        \\\ --prefix <prefix>   Specify output path prefix
         \\\
     , .{prog_name});
 }

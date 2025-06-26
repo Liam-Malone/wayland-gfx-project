@@ -18,29 +18,29 @@ pub const Connection = struct {
         defer scratch.end();
         const xdg_runtime_dir = std.posix.getenv("XDG_RUNTIME_DIR").?;
         const wayland_display = std.posix.getenv("WAYLAND_DISPLAY").?;
-    
+
         const sock_path = try std.mem.join(scratch.arena.allocator(), "/", &[_][]const u8{ xdg_runtime_dir, wayland_display });
-    
+
         const opt_non_block = 0;
         const sockfd = try std.posix.socket(
             std.posix.AF.UNIX,
             std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC | opt_non_block,
             0,
         );
-    
+
         var addr: std.posix.sockaddr.un = addr: {
             var sock_addr: std.posix.sockaddr.un = .{
                 .family = std.posix.AF.UNIX,
                 .path = undefined,
             };
-    
+
             if (sock_path.len + 1 > sock_addr.path.len) return error.SocketPathTooLong;
-    
+
             @memset(&sock_addr.path, 0);
             @memcpy(sock_addr.path[0..sock_path.len], sock_path);
             break :addr sock_addr;
         };
-    
+
         std.posix.connect(
             sockfd,
             @ptrCast(&addr),
@@ -49,7 +49,6 @@ pub const Connection = struct {
             log.err("Failed to connect to Wayland Socket with err :: {s}", .{@errorName(err)});
             return err;
         };
-    
 
         return .{
             .sock = sockfd,
@@ -321,7 +320,7 @@ pub const Connection = struct {
 
         pub inline fn get_arr(iter: *EventDataIter) ![]const u8 {
             if (iter.buf.len < @sizeOf(u32)) {
-                return error.InvalidLength;
+                return error.NoLengthPrefix;
             }
 
             const msg_len = std.mem.bytesToValue(u32, iter.buf[0..@sizeOf(u32)]);
@@ -329,11 +328,11 @@ pub const Connection = struct {
             const consume_len = rounded_len + @sizeOf(u32);
 
             if (consume_len > iter.buf.len) {
-                return error.InvalidLength;
+                return error.BufferTooShort;
             }
 
             defer iter.consume(consume_len);
-            const arr = iter.buf[@sizeOf(u32)..][0..(@sizeOf(u32) + msg_len)];
+            const arr = iter.buf[@sizeOf(u32)..][0..msg_len];
             return arr;
         }
 
@@ -362,7 +361,7 @@ pub const Connection = struct {
         size: u16,
     };
 
-    const log = std.log.scoped(.@"Wayland");
+    const log = std.log.scoped(.Wayland);
 };
 
 const Registry = struct {
@@ -407,7 +406,6 @@ const Registry = struct {
     pub fn get_parse_fn(self: *const Registry, idx: u32) ?EventParseFn {
         return self.parse_fns[idx];
     }
-
 
     const IndexFreeQueue = struct {
         buf: [QueueSize]u32 = @splat(0),
@@ -544,113 +542,115 @@ pub const EventIterator = struct {
         };
     }
 
-    pub fn next(iter: *EventIterator) ?WaylandEvent {
+    pub fn next(iter: *EventIterator) ?Event {
         return iter.ev_queue.next();
     }
 
     pub fn load_events(iter: *EventIterator) !void {
-            var cmsg_buf: [@sizeOf(cmsghdr) * 10]u8 = undefined;
+        var cmsg_buf: [@sizeOf(cmsghdr) * 10]u8 = undefined;
 
-            var iov = [_]std.posix.iovec{
-                .{
-                    .base = iter.buf[iter.write_idx..].ptr,
-                    .len = iter.buf[iter.write_idx..].len,
-                },
-            };
+        var iov = [_]std.posix.iovec{
+            .{
+                .base = iter.buf[iter.write_idx..].ptr,
+                .len = iter.buf[iter.write_idx..].len,
+            },
+        };
 
-            var message: std.posix.msghdr = .{
-                .name = null,
-                .namelen = 0,
-                .iov = &iov,
-                .iovlen = @intCast(iov.len),
-                .control = &cmsg_buf,
-                .controllen = cmsg_buf.len,
-                .flags = 0,
-            };
+        var message: std.posix.msghdr = .{
+            .name = null,
+            .namelen = 0,
+            .iov = &iov,
+            .iovlen = @intCast(iov.len),
+            .control = &cmsg_buf,
+            .controllen = cmsg_buf.len,
+            .flags = 0,
+        };
 
-            const rc = std.os.linux.recvmsg(iter.conn.sock,
-                &message,
-                0,
-            );
-            if (rc > iter.buf.len) {
-                const err = std.posix.errno(rc);
-                log.debug("rc :: {d}", .{@as(isize, @bitCast(rc))});
-                log.err("Socket read failed with err :: {s}", .{@tagName(err)});
-                return error.SocketReadFailed;
-            } else {
-                const bytes_read: u32 = @intCast(rc);
-                iter.write_idx += bytes_read;
-                // check for file descriptors
-                {
-                    log.debug("message controllen={d}", .{message.controllen});
-                    var cmsg_iter = cmsghdr.iter(cmsg_buf[0..message.controllen]);
-                    while (cmsg_iter.next()) |cmsg_header| {
-                        if (cmsg_header.type == std.posix.SOL.SOCKET and cmsg_header.level == SCM_RIGHTS) {
-                            iter.fd_queue.push(cmsg_header.data(std.posix.fd_t).*);
-                            log.debug("Found file descriptor of value :: {d}", .{cmsg_header.data(std.posix.fd_t).*});
-                        }
+        const rc = std.os.linux.recvmsg(
+            iter.conn.sock,
+            &message,
+            0,
+        );
+        if (rc > iter.buf.len) {
+            const err = std.posix.errno(rc);
+            log.debug("rc :: {d}", .{@as(isize, @bitCast(rc))});
+            log.err("Socket read failed with err :: {s}", .{@tagName(err)});
+            return error.SocketReadFailed;
+        } else {
+            const bytes_read: u32 = @intCast(rc);
+            iter.write_idx += bytes_read;
+            // check for file descriptors
+            {
+                log.debug("message controllen={d}", .{message.controllen});
+                var cmsg_iter = cmsghdr.iter(cmsg_buf[0..message.controllen]);
+                while (cmsg_iter.next()) |cmsg_header| {
+                    if (cmsg_header.type == std.posix.SOL.SOCKET and cmsg_header.level == SCM_RIGHTS) {
+                        iter.fd_queue.push(cmsg_header.data(std.posix.fd_t).*);
+                        log.debug("Found file descriptor of value :: {d}", .{cmsg_header.data(std.posix.fd_t).*});
                     }
                 }
-
-                // standard event processing
-                {
-                    var read_idx: u32 = 0;
-                    while (read_idx < iter.write_idx) {
-                        log.debug("reading event", .{});
-                        const header = std.mem.bytesToValue(Connection.Header, iter.buf[read_idx..][0..@sizeOf(Connection.Header)]);
-                        log.debug("Header :: {{ .id = {d}, .op = {d}, .len = {d} }}", .{
-                            header.id,
-                            header.op,
-                            header.size,
-                        });
-
-                        const msg_size = header.size;
-                        if (read_idx + @sizeOf(Connection.Header) + msg_size <= iter.write_idx) {
-                            break;
-                        }
-                        read_idx += @sizeOf(Connection.Header);
-
-                        const wire_ev: Connection.WireEvent = .{
-                            .header = header,
-                            .data = iter.buf[read_idx..][0..msg_size],
-                        };
-
-                        const parse_fn = iter.conn.registry.get_parse_fn(header.id).?;
-                        const event: WaylandEvent = ev: {
-                            const active_tag = std.meta.activeTag(parse_fn);
-                            try switch (parse_fn) { 
-                                inline else => |pfn| {
-                                    inline for (@typeInfo(WaylandEvent).@"union".fields) |field| {
-                                        if (std.mem.eql(u8, field.name, @tagName(active_tag))) {
-                                            @compileLog("id={d} and {s} == {s} ??", .{header.id, field.name, @tagName(active_tag)});
-                                            break :ev @unionInit(WaylandEvent, field.name, try pfn(header.op, wire_ev.data));
-                                        } else {
-                                            // continue to check the next type
-                                        }
-                                    }
-                                    unreachable;
-                                },
-                            };
-                        };
-                        iter.ev_queue.push(event);
-                    }
-                }
-                log.debug("Received {d} bytes from socket", .{rc});
             }
+
+            // standard event processing
+            {
+                var read_idx: u32 = 0;
+                while (read_idx < iter.write_idx) {
+                    log.debug("START :: read_idx={d}, write_idx={d}", .{read_idx, iter.write_idx});
+                    defer log.debug("END :: read_idx={d}, write_idx={d}", .{read_idx, iter.write_idx});
+                    log.debug("reading event", .{});
+                    const header = std.mem.bytesToValue(Connection.Header, iter.buf[read_idx..][0..@sizeOf(Connection.Header)]);
+                    log.debug("Header :: {{ .id = {d}, .op = {d}, .size = {d} }}", .{
+                        header.id,
+                        header.op,
+                        header.size,
+                    });
+
+                    const msg_size = header.size;
+                    const data_end = read_idx + msg_size;
+
+                    if (data_end >= iter.write_idx) {
+                        break;
+                    }
+
+                    const msg_data = iter.buf[read_idx..][@sizeOf(Connection.Header)..msg_size];
+                    defer read_idx += msg_size;
+
+                    const parse_fn = iter.conn.registry.get_parse_fn(header.id).?;
+                    const active_tag = std.meta.activeTag(parse_fn);
+                    const event: Event = ev: {
+                        inline for (@typeInfo(@TypeOf(parse_fn)).@"union".fields) |field| {
+                            if (std.mem.eql(u8, field.name, @tagName(active_tag))) {
+                                break :ev @unionInit(
+                                    Event,
+                                    field.name,
+                                    try @field(parse_fn, field.name)(header.op, msg_data),
+                                );
+                            }
+                        }
+                        unreachable;
+                    };
+                    if (std.mem.eql(u8, @tagName(active_tag), "wl_registry")) {
+                        log.debug("interface :: {s}", .{event.wl_registry.global.interface});
+                    }
+                    iter.ev_queue.push(event);
+                }
+            }
+            log.debug("Received {d} bytes from socket", .{rc});
+        }
     }
 
     const EvQueue = struct {
-        data: [Size]WaylandEvent = undefined,
+        data: [Size]Event = undefined,
         read: usize = 0,
         write: usize = 0,
 
-        pub fn push(noalias queue: *EvQueue, event: WaylandEvent) void {
+        pub fn push(noalias queue: *EvQueue, event: Event) void {
             const write_idx = queue.write % queue.data.len;
             queue.data[write_idx] = event;
             queue.write += 1;
         }
 
-        pub fn next(noalias queue: *EvQueue) ?WaylandEvent {
+        pub fn next(noalias queue: *EvQueue) ?Event {
             if (queue.read != queue.write) {
                 defer queue.read += 1;
 
@@ -689,7 +689,7 @@ pub const EventIterator = struct {
         pub const Size = 64;
     };
 
-    const log = std.log.scoped(.@"WaylandEvent");
+    const log = std.log.scoped(.Event);
 };
 
 pub const ObjectEventTag = blk: {
@@ -784,7 +784,7 @@ const EventParseFn = blk: {
     break :blk T;
 };
 
-const WaylandEvent = blk: {
+const Event = blk: {
     const union_len = len_blk: {
         var decl_count: usize = 0;
         for (std.meta.declarations(protocols)) |protocol_decl| {
