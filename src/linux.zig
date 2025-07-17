@@ -528,6 +528,7 @@ const Registry = struct {
 pub const EventIterator = struct {
     conn: *const Connection,
     buf: []u8,
+    read_idx: u32,
     write_idx: u32,
     ev_queue: EvQueue,
     fd_queue: FdQueue,
@@ -537,6 +538,7 @@ pub const EventIterator = struct {
             .conn = conn,
             .buf = arena.push(u8, size),
             .write_idx = 0,
+            .read_idx = 0,
             .ev_queue = .{},
             .fd_queue = .{},
         };
@@ -547,12 +549,20 @@ pub const EventIterator = struct {
     }
 
     pub fn load_events(iter: *EventIterator) !void {
+        // shift any incomplete data to the start
+        if (iter.read_idx != iter.write_idx) { 
+            defer iter.read_idx = 0;
+            const bytes_to_move = iter.write_idx - iter.read_idx;
+            @memmove(iter.buf[0..bytes_to_move % iter.buf.len], iter.buf[iter.read_idx % iter.buf.len .. iter.write_idx]);
+            iter.write_idx -= iter.read_idx;
+        }
+
         var cmsg_buf: [@sizeOf(cmsghdr) * 10]u8 = undefined;
 
         var iov = [_]std.posix.iovec{
             .{
-                .base = iter.buf[iter.write_idx..].ptr,
-                .len = iter.buf[iter.write_idx..].len,
+                .base = iter.buf[iter.write_idx % iter.buf.len..].ptr,
+                .len = iter.buf[iter.write_idx % iter.buf.len..].len,
             },
         };
 
@@ -593,18 +603,17 @@ pub const EventIterator = struct {
 
             // standard event processing
             {
-                var read_idx: u32 = 0;
-                while (read_idx < iter.write_idx) {
-                    const header = std.mem.bytesToValue(Connection.Header, iter.buf[read_idx..][0..@sizeOf(Connection.Header)]);
+                while (iter.read_idx < iter.write_idx) {
+                    const header = std.mem.bytesToValue(Connection.Header, iter.buf[iter.read_idx % iter.buf.len..][0..@sizeOf(Connection.Header)]);
                     const msg_size = header.size;
-                    const data_end = read_idx + msg_size;
+                    const data_end = iter.read_idx + msg_size;
 
                     if (data_end >= iter.write_idx) {
                         break;
                     }
 
-                    const msg_data = iter.buf[read_idx..][@sizeOf(Connection.Header)..msg_size];
-                    defer read_idx += msg_size;
+                    const msg_data = iter.buf[iter.read_idx % iter.buf.len..][@sizeOf(Connection.Header)..msg_size];
+                    defer iter.read_idx += msg_size;
 
                     const parse_fn = iter.conn.registry.get_parse_fn(header.id).?;
                     const active_tag = std.meta.activeTag(parse_fn);
@@ -627,10 +636,6 @@ pub const EventIterator = struct {
                     };
                     iter.ev_queue.push(event);
                 }
-
-                const bytes_to_move = iter.write_idx - read_idx;
-                @memmove(iter.buf[0..bytes_to_move], iter.buf[read_idx..iter.write_idx]);
-                iter.write_idx -= read_idx;
             }
             log.debug("Received {d} bytes from socket", .{rc});
         }
